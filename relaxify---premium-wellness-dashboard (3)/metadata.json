@@ -1,0 +1,7 @@
+{
+  "name": "Relaxify - Premium Wellness Dashboard",
+  "description": "A modern, SaaS-style health companion for tracking posture and neck exercises using real-time computer vision.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
