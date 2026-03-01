@@ -1,6 +1,7 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ExerciseType, UserMonitoring } from '../types';
+import { TiltCard } from './TiltCard';
 
 interface DashboardProps {
   onStartExercise: (type: ExerciseType) => void;
@@ -12,211 +13,590 @@ const QUOTES = [
   "Self-care is how you take your power back.",
   "Your mind is a sanctuary. Keep it clean.",
   "Calmness is a superpower.",
-  "Health is a relationship between you and your body."
+  "Health is a relationship between you and your body.",
+  "Breathe. You are where you need to be.",
+  "Small consistent steps create monumental change.",
 ];
 
 const EXERCISE_IMAGES = {
-  [ExerciseType.NECK_TILT]: "https://images.unsplash.com/photo-1599447421416-3414500d18a5?auto=format&fit=crop&q=80&w=600",
+  [ExerciseType.NECK_TILT]:     "https://images.unsplash.com/photo-1599447421416-3414500d18a5?auto=format&fit=crop&q=80&w=600",
   [ExerciseType.HEAD_MOVEMENT]: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&q=80&w=600",
-  [ExerciseType.SHOULDER_SHRUG]: "https://images.unsplash.com/photo-1574680096145-d05b474e2155?auto=format&fit=crop&q=80&w=600",
-  [ExerciseType.MEDITATION]: "https://images.unsplash.com/photo-1508672019048-805c876b67e2?auto=format&fit=crop&q=80&w=600",
-  [ExerciseType.EYE_FOCUS]: "https://images.unsplash.com/photo-1516733725897-1aa73b87c8e8?auto=format&fit=crop&q=80&w=600"
+  [ExerciseType.SHOULDER_SHRUG]:"https://images.unsplash.com/photo-1574680096145-d05b474e2155?auto=format&fit=crop&q=80&w=600",
+  [ExerciseType.MEDITATION]:    "https://images.unsplash.com/photo-1508672019048-805c876b67e2?auto=format&fit=crop&q=80&w=600",
+  [ExerciseType.EYE_FOCUS]:     "https://images.unsplash.com/photo-1516733725897-1aa73b87c8e8?auto=format&fit=crop&q=80&w=600",
 };
 
-export const Dashboard: React.FC<DashboardProps> = ({ onStartExercise, userName, monitoring }) => {
-  const [quote, setQuote] = useState('');
+/* ── Animated eye health ring ───────────────────────────────────── */
+const BlinkRing: React.FC<{ rate: number; isStrained: boolean }> = ({ rate, isStrained }) => {
+  const ringRef = useRef<SVGCircleElement>(null);
+  const ideal   = 18; // ideal blinks per minute
+  const pct     = Math.min(rate / ideal, 1);
+  const dashOff = 283 * (1 - pct);
+
+  useEffect(() => {
+    if (!ringRef.current) return;
+    ringRef.current.style.strokeDashoffset = `${dashOff}`;
+  }, [dashOff]);
+
+  return (
+    <svg width="80" height="80" viewBox="0 0 100 100" aria-hidden="true">
+      {/* Background ring */}
+      <circle cx="50" cy="50" r="45" fill="none" stroke="rgba(56,249,215,0.1)" strokeWidth="8" />
+      {/* Progress ring */}
+      <circle
+        ref={ringRef}
+        cx="50" cy="50" r="45"
+        fill="none"
+        stroke={isStrained ? '#EF4444' : '#38F9D7'}
+        strokeWidth="8"
+        strokeLinecap="round"
+        strokeDasharray="283"
+        strokeDashoffset="283"
+        transform="rotate(-90 50 50)"
+        style={{
+          transition: 'stroke-dashoffset 1.5s cubic-bezier(0.34,1.56,0.64,1), stroke 0.4s ease',
+          filter: isStrained
+            ? 'drop-shadow(0 0 6px rgba(239,68,68,0.8))'
+            : 'drop-shadow(0 0 6px rgba(56,249,215,0.8))',
+        }}
+      />
+      {/* Center number */}
+      <text
+        x="50" y="54"
+        textAnchor="middle"
+        fontSize="22"
+        fontWeight="900"
+        fontFamily="Plus Jakarta Sans, Inter, sans-serif"
+        fill={isStrained ? '#EF4444' : '#38F9D7'}
+      >
+        {rate}
+      </text>
+    </svg>
+  );
+};
+
+/* ── Animated activity cell ─────────────────────────────────────── */
+const ActivityCell: React.FC<{ level: 0|1|2|3|4; delay: number }> = ({ level, delay }) => {
+  const classes = [
+    'activity-cell activity-cell-0',
+    'activity-cell activity-cell-1',
+    'activity-cell activity-cell-2',
+    'activity-cell activity-cell-3',
+    'activity-cell activity-cell-4',
+  ];
+
+  return (
+    <div
+      className={classes[level]}
+      style={{
+        animation: `entrance 0.4s ease ${delay}ms both`,
+      }}
+      title={`Activity level: ${['None','Low','Moderate','High','Peak'][level]}`}
+    />
+  );
+};
+
+/* ── Exercise card ──────────────────────────────────────────────── */
+interface ExerciseCardProps {
+  title: string;
+  description: string;
+  intensity: string;
+  intensityColor: string;
+  time: string;
+  image: string;
+  onClick?: () => void;
+  isRecommended?: boolean;
+  index: number;
+}
+
+const ExerciseCard: React.FC<ExerciseCardProps> = ({
+  title, description, intensity, intensityColor, time, image,
+  onClick, isRecommended, index,
+}) => {
+  return (
+    <TiltCard
+      className="card-base rounded-[36px] p-5 relative overflow-hidden"
+      intensity={10}
+      shine
+      onClick={onClick}
+      style={{
+        cursor: 'pointer',
+        animation: `entrance 0.55s cubic-bezier(0.16,1,0.3,1) ${index * 80}ms both`,
+      } as React.CSSProperties}
+    >
+      {/* Recommended badge */}
+      {isRecommended && (
+        <div
+          className="absolute top-4 right-4 z-20 badge badge-red animate-pulse"
+          role="status"
+          aria-label="Recommended: eye strain detected"
+        >
+          ⚡ Critical
+        </div>
+      )}
+
+      {/* Image area */}
+      <div
+        className="h-44 w-full rounded-[26px] mb-5 overflow-hidden relative"
+        style={{ background: 'var(--border-card)' }}
+      >
+        <img
+          src={image}
+          alt={title}
+          className="w-full h-full object-cover"
+          style={{ transition: 'transform 0.7s cubic-bezier(0.34,1.56,0.64,1)' }}
+          onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.12)')}
+          onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
+          loading="lazy"
+        />
+        {/* Gradient overlay */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: 'linear-gradient(to top, rgba(10,22,40,0.5) 0%, transparent 60%)',
+          }}
+        />
+      </div>
+
+      {/* Meta chips */}
+      <div className="flex items-center gap-2 mb-3">
+        <span
+          className="badge"
+          style={{
+            background: `${intensityColor}15`,
+            color: intensityColor,
+            border: `1px solid ${intensityColor}30`,
+          }}
+        >
+          {intensity}
+        </span>
+        <span className="badge badge-teal">{time}</span>
+      </div>
+
+      {/* Text */}
+      <h4
+        className="text-lg font-black mb-1.5 group-hover:text-gradient"
+        style={{
+          color: 'var(--text-primary)',
+          transition: 'color 0.2s ease',
+        }}
+      >
+        {title}
+      </h4>
+      <p className="text-xs font-medium leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+        {description}
+      </p>
+
+      {/* Start button hint */}
+      <div
+        className="mt-4 flex items-center gap-2"
+        style={{ color: '#38F9D7', fontSize: 11, fontWeight: 800, letterSpacing: '0.1em' }}
+      >
+        <span>START SESSION</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+          <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+    </TiltCard>
+  );
+};
+
+/* ── Dashboard ──────────────────────────────────────────────────── */
+export const Dashboard: React.FC<DashboardProps> = ({
+  onStartExercise, userName, monitoring,
+}) => {
+  const [quote,    setQuote]    = useState('');
   const [greeting, setGreeting] = useState('');
+  const [mounted,  setMounted]  = useState(false);
+  const progressRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)]);
     const hour = new Date().getHours();
-    if (hour < 12) setGreeting('Good Morning');
-    else if (hour < 17) setGreeting('Good Afternoon');
-    else setGreeting('Good Evening');
+    setGreeting(hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening');
+
+    // Stagger entrance
+    const tid = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(tid);
   }, []);
 
+  // Activity grid data — 28 cells with varied intensity
+  const activityData: (0|1|2|3|4)[] = Array.from({ length: 28 }, (_, i) => {
+    if (i > 22) return 4;
+    if (i > 18) return 3;
+    if (i > 13) return 2;
+    if (i > 8)  return 1;
+    return 0;
+  });
+
   return (
-    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      
-      {/* Prominent Greeting Section */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
+    <div className="space-y-8 max-w-7xl" style={{ opacity: mounted ? 1 : 0, transition: 'opacity 0.4s ease' }}>
+
+      {/* ── Greeting row ──────────────────────────────────── */}
+      <div
+        className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6"
+        style={{ animation: 'entrance 0.65s cubic-bezier(0.16,1,0.3,1) 50ms both' }}
+      >
+        {/* Hero greeting */}
         <div>
           <div className="flex items-center gap-3 mb-4">
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse" />
-            <p className="text-teal-500 font-black text-xs uppercase tracking-[0.4em]">{greeting}</p>
+            <div
+              style={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: '#38F9D7',
+                boxShadow: '0 0 12px rgba(56,249,215,0.8)',
+                animation: 'glow-pulse 2s ease-in-out infinite',
+              }}
+            />
+            <p
+              className="font-black text-xs uppercase tracking-[0.4em]"
+              style={{ color: '#38F9D7' }}
+            >
+              {greeting}
+            </p>
           </div>
-          <h2 className="text-6xl font-black text-[#2C3E50] tracking-tighter leading-tight">
-            {userName}<span className="text-teal-400">.</span>
+
+          <h2
+            className="font-black tracking-tighter leading-none fluid-hero"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            {userName}<span style={{ color: '#38F9D7' }}>.</span>
           </h2>
-          <p className="text-gray-400 font-medium mt-4 text-lg max-w-xl">
-            Focus on your digital wellbeing today.
+
+          <p
+            className="font-medium mt-4 text-lg max-w-lg"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Focus on your digital wellbeing today. Your body thanks you.
           </p>
         </div>
 
-        {/* Real-time Eye Health Widget */}
-        <div className="bg-white p-6 rounded-[32px] premium-shadow border border-teal-50 min-w-[280px]">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Digital Eye Health</h4>
-            <div className={`px-2 py-0.5 rounded-full text-[8px] font-black ${monitoring?.isStrained ? 'bg-red-100 text-red-600' : 'bg-teal-100 text-teal-600'}`}>
-              {monitoring?.isStrained ? 'STRAIN DETECTED' : 'OPTIMAL'}
+        {/* ── Eye health widget ─────────────────────────── */}
+        <div
+          className="card-base rounded-[36px] p-7 min-w-[300px]"
+          style={{ animation: 'entrance 0.65s cubic-bezier(0.16,1,0.3,1) 150ms both' }}
+          role="region"
+          aria-label="Digital eye health metrics"
+        >
+          <div className="flex items-center justify-between mb-5">
+            <h4
+              className="text-[10px] font-black uppercase tracking-widest"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Digital Eye Health
+            </h4>
+            <span className={`badge ${monitoring?.isStrained ? 'badge-red' : 'badge-teal'}`}>
+              {monitoring?.isStrained ? '⚠ Strain' : '✓ Optimal'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-6">
+            {/* Blink rate ring */}
+            <BlinkRing
+              rate={monitoring?.blinkRate ?? 0}
+              isStrained={monitoring?.isStrained ?? false}
+            />
+
+            <div className="flex-1 space-y-3">
+              <div>
+                <p
+                  className="text-2xl font-black"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  {monitoring?.blinkRate ?? 0}
+                </p>
+                <p
+                  className="text-[9px] font-bold uppercase tracking-widest"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Blinks / Min
+                </p>
+              </div>
+              <div>
+                <p
+                  className="text-2xl font-black"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  {monitoring?.sessionBlinks ?? 0}
+                </p>
+                <p
+                  className="text-[9px] font-bold uppercase tracking-widest"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Total Blinks
+                </p>
+              </div>
             </div>
           </div>
-          <div className="flex gap-4">
-             <div className="flex-1">
-               <p className="text-2xl font-black text-gray-800">{monitoring?.blinkRate || 0}</p>
-               <p className="text-[9px] font-bold text-gray-400 uppercase">Blinks / Min</p>
-             </div>
-             <div className="w-px h-8 bg-gray-100 self-center" />
-             <div className="flex-1">
-               <p className="text-2xl font-black text-gray-800">{monitoring?.sessionBlinks || 0}</p>
-               <p className="text-[9px] font-bold text-gray-400 uppercase">Total Blinks</p>
-             </div>
-          </div>
-          <button 
+
+          <button
             onClick={() => onStartExercise(ExerciseType.EYE_FOCUS)}
-            className="w-full mt-4 py-2 bg-teal-50 text-teal-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-100 transition-colors"
+            className="w-full mt-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest btn-ripple"
+            style={{
+              background: 'rgba(56,249,215,0.1)',
+              color: '#38F9D7',
+              border: '1px solid rgba(56,249,215,0.2)',
+              transition: 'all 0.2s ease',
+            }}
+            aria-label="Start 20-20-20 eye relief exercise"
           >
-            Start 20-20-20 Rule
+            👁 Start 20-20-20 Rule
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-[#2C3E50] rounded-[48px] p-10 text-white relative overflow-hidden shadow-2xl">
+      {/* ── Hero cards row ────────────────────────────────── */}
+      <div
+        className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+        style={{ animation: 'entrance 0.65s cubic-bezier(0.16,1,0.3,1) 200ms both' }}
+      >
+        {/* Daily momentum — dark card */}
+        <TiltCard
+          className="lg:col-span-2 rounded-[48px] p-10 relative overflow-hidden"
+          intensity={6}
+          shine
+          style={{
+            background: 'linear-gradient(145deg, #0D1F35 0%, #132A45 50%, #091825 100%)',
+          } as React.CSSProperties}
+        >
+          {/* Ambient glow orbs inside card */}
+          <div
+            className="absolute top-[-60px] right-[-60px] w-72 h-72 rounded-full"
+            style={{
+              background: 'radial-gradient(circle, rgba(56,249,215,0.25) 0%, transparent 70%)',
+              filter: 'blur(30px)',
+              animation: 'float 8s ease-in-out infinite',
+            }}
+          />
+          <div
+            className="absolute bottom-[-80px] left-10 w-80 h-80 rounded-full"
+            style={{
+              background: 'radial-gradient(circle, rgba(96,165,250,0.12) 0%, transparent 70%)',
+              filter: 'blur(40px)',
+            }}
+          />
+
           <div className="relative z-10 h-full flex flex-col justify-between">
             <div>
-              <p className="text-teal-400 font-black text-xs uppercase tracking-[0.3em] mb-4">Daily Momentum</p>
-              <h2 className="text-3xl font-black mb-4">Ready to Focus?</h2>
-              <p className="text-gray-400 font-medium max-w-sm">Consistency is key. Every session improves cognitive performance and physical longevity.</p>
+              <p
+                className="font-black text-xs uppercase tracking-[0.3em] mb-5"
+                style={{ color: '#38F9D7' }}
+              >
+                Daily Momentum
+              </p>
+              <h2
+                className="font-black mb-4"
+                style={{ fontSize: 'clamp(1.6rem, 3vw, 2.4rem)', color: '#DCF0EC' }}
+              >
+                Ready to Focus?
+              </h2>
+              <p style={{ color: 'rgba(122,171,184,0.9)', maxWidth: 360, lineHeight: 1.7 }}>
+                Consistency is key. Every session improves cognitive performance and physical longevity.
+              </p>
             </div>
-            
+
             <div className="mt-8 flex items-end gap-6">
+              {/* Progress bar */}
               <div className="flex-1">
-                <div className="flex justify-between text-xs font-black uppercase tracking-widest mb-2">
+                <div
+                  className="flex justify-between text-xs font-black uppercase tracking-widest mb-3"
+                  style={{ color: 'rgba(220,240,236,0.8)' }}
+                >
                   <span>Progress towards goal</span>
-                  <span className="text-teal-400">85%</span>
+                  <span style={{ color: '#38F9D7' }}>85%</span>
                 </div>
-                <div className="h-4 bg-white/10 rounded-full overflow-hidden p-1">
-                  <div className="h-full w-[85%] bg-teal-400 rounded-full shadow-[0_0_15px_rgba(56,249,215,0.6)]" />
+                <div
+                  className="h-3 rounded-full overflow-hidden p-0.5"
+                  style={{ background: 'rgba(255,255,255,0.08)' }}
+                >
+                  <div
+                    className="h-full rounded-full progress-fill"
+                    style={{
+                      width: '85%',
+                      background: 'linear-gradient(90deg, #38F9D7, #20C997)',
+                      boxShadow: '0 0 12px rgba(56,249,215,0.7)',
+                    }}
+                  />
+                </div>
+
+                {/* Progress ticks */}
+                <div className="flex justify-between mt-2">
+                  {[0,25,50,75,100].map(v => (
+                    <span
+                      key={v}
+                      className="text-[8px] font-bold"
+                      style={{ color: 'rgba(122,171,184,0.5)' }}
+                    >
+                      {v}%
+                    </span>
+                  ))}
                 </div>
               </div>
-              <button 
+
+              {/* CTA button */}
+              <button
                 onClick={() => onStartExercise(ExerciseType.MEDITATION)}
-                className="px-8 py-4 bg-white text-[#2C3E50] rounded-2xl font-black text-sm hover:scale-105 active:scale-95 transition-all shadow-lg"
+                className="btn-ripple rounded-2xl font-black text-sm px-7 py-4"
+                style={{
+                  background: 'rgba(255,255,255,0.95)',
+                  color: '#0D1F35',
+                  boxShadow: '0 8px 30px rgba(0,0,0,0.25)',
+                  whiteSpace: 'nowrap',
+                  transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                }}
+                aria-label="Enter Zen Mode meditation"
               >
-                Zen Mode
+                ✦ Zen Mode
               </button>
             </div>
           </div>
-          <div className="absolute top-[-50px] right-[-50px] w-64 h-64 bg-teal-400/20 rounded-full blur-[80px]" />
-          <div className="absolute bottom-[-100px] left-20 w-80 h-80 bg-blue-500/10 rounded-full blur-[100px]" />
-        </div>
+        </TiltCard>
 
-        <div className="bg-white rounded-[48px] p-10 premium-shadow border border-gray-100 flex flex-col justify-between group">
+        {/* Activity intensity card */}
+        <TiltCard
+          className="card-base rounded-[48px] p-8 flex flex-col justify-between"
+          intensity={8}
+          shine
+        >
           <div>
+            {/* Header */}
             <div className="flex items-center justify-between mb-6">
-              <p className="text-gray-400 font-black text-[10px] uppercase tracking-[0.3em]">Activity Intensity</p>
-              <div className="relative">
-                <svg className="w-4 h-4 text-gray-300 cursor-help peer" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <p
+                className="text-[10px] font-black uppercase tracking-[0.3em]"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Activity Intensity
+              </p>
+              <div className="relative group">
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <path
+                    strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
                 </svg>
-                <div className="absolute bottom-full right-0 mb-2 w-48 bg-[#2C3E50] text-white p-3 rounded-xl text-[10px] opacity-0 peer-hover:opacity-100 transition-opacity pointer-events-none z-50 shadow-xl">
-                  Brighter squares mean higher wellness activity on that day.
+                {/* Tooltip */}
+                <div
+                  className="absolute bottom-full right-0 mb-2 w-52 p-3 rounded-xl text-[10px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 premium-shadow-lg"
+                  style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-card)',
+                    color: 'var(--text-secondary)',
+                  }}
+                  role="tooltip"
+                >
+                  Brighter squares = higher wellness activity on that day.
                 </div>
               </div>
             </div>
-            <div className="grid grid-cols-7 gap-2">
-              {Array.from({ length: 28 }).map((_, i) => (
-                <div 
-                  key={i} 
-                  className={`aspect-square rounded-md transition-all duration-300 hover:scale-125 hover:shadow-md cursor-default ${
-                    i > 20 ? 'bg-teal-400' : 
-                    i > 15 ? 'bg-teal-200' : 
-                    i > 10 ? 'bg-teal-100' : 'bg-gray-50'
-                  }`}
-                />
+
+            {/* 4-week grid */}
+            <div
+              className="grid gap-1.5"
+              style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}
+              role="img"
+              aria-label="28-day wellness activity heatmap"
+            >
+              {activityData.map((level, i) => (
+                <ActivityCell key={i} level={level} delay={i * 20} />
               ))}
             </div>
+
+            {/* Legend */}
+            <div className="flex items-center gap-2 mt-4 justify-end">
+              <span className="text-[9px] font-bold" style={{ color: 'var(--text-muted)' }}>Less</span>
+              {([0,1,2,3,4] as (0|1|2|3|4)[]).map(l => (
+                <div key={l} className={`w-3 h-3 rounded-sm activity-cell-${l}`} />
+              ))}
+              <span className="text-[9px] font-bold" style={{ color: 'var(--text-muted)' }}>More</span>
+            </div>
           </div>
-          <div className="mt-6 pt-6 border-t border-gray-50">
-            <h4 className="text-sm font-black text-gray-800 italic leading-snug">"{quote}"</h4>
+
+          {/* Inspirational quote */}
+          <div
+            className="mt-6 pt-6"
+            style={{ borderTop: '1px solid var(--border-card)' }}
+          >
+            <p
+              className="text-sm font-semibold italic leading-relaxed"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              "{quote}"
+            </p>
           </div>
-        </div>
+        </TiltCard>
       </div>
 
-      <section>
-        <div className="flex items-center justify-between mb-8 px-2">
-          <h2 className="text-3xl font-black text-[#2C3E50] tracking-tight">Active Programs</h2>
+      {/* ── Active Programs ───────────────────────────────── */}
+      <section
+        aria-labelledby="programs-heading"
+        style={{ animation: 'entrance 0.65s cubic-bezier(0.16,1,0.3,1) 350ms both' }}
+      >
+        <div className="flex items-center justify-between mb-8 px-1">
+          <h2
+            id="programs-heading"
+            className="font-black tracking-tight"
+            style={{ fontSize: 'clamp(1.4rem, 2.5vw, 2rem)', color: 'var(--text-primary)' }}
+          >
+            Active Programs
+          </h2>
+          <span
+            className="badge badge-teal"
+            aria-label="4 programs available"
+          >
+            4 Programs
+          </span>
         </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <ExerciseCard 
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          <ExerciseCard
+            index={0}
             title="Eye Reset"
-            description="The 20-20-20 rule to prevent digital eye strain."
+            description="The 20-20-20 rule to prevent digital eye strain instantly."
             intensity="Zero"
+            intensityColor="#38F9D7"
             time="1 min"
             image={EXERCISE_IMAGES[ExerciseType.EYE_FOCUS]}
             onClick={() => onStartExercise(ExerciseType.EYE_FOCUS)}
             isRecommended={monitoring?.isStrained}
           />
-          <ExerciseCard 
+          <ExerciseCard
+            index={1}
             title="Neck Tilt Flow"
             description="Reduce stiffness with targeted lateral neck stretches."
             intensity="Low"
+            intensityColor="#60A5FA"
             time="5 min"
             image={EXERCISE_IMAGES[ExerciseType.NECK_TILT]}
             onClick={() => onStartExercise(ExerciseType.NECK_TILT)}
           />
-          <ExerciseCard 
+          <ExerciseCard
+            index={2}
             title="Head Rotation"
             description="Improve mobility with gentle 360° neck circles."
             intensity="Medium"
+            intensityColor="#F59E0B"
             time="3 min"
             image={EXERCISE_IMAGES[ExerciseType.HEAD_MOVEMENT]}
             onClick={() => onStartExercise(ExerciseType.HEAD_MOVEMENT)}
           />
-          <ExerciseCard 
+          <ExerciseCard
+            index={3}
             title="Shoulder Shrugs"
             description="Release upper body tension and reset your posture."
             intensity="Low"
+            intensityColor="#60A5FA"
             time="4 min"
             image={EXERCISE_IMAGES[ExerciseType.SHOULDER_SHRUG]}
             onClick={() => onStartExercise(ExerciseType.SHOULDER_SHRUG)}
           />
         </div>
       </section>
-    </div>
-  );
-};
-
-interface ExerciseCardProps {
-  title: string;
-  description: string;
-  intensity: string;
-  time: string;
-  image: string;
-  onClick?: () => void;
-  isRecommended?: boolean;
-}
-
-const ExerciseCard: React.FC<ExerciseCardProps> = ({ title, description, intensity, time, image, onClick, isRecommended }) => {
-  return (
-    <div 
-      onClick={onClick}
-      className="group relative bg-white rounded-[40px] p-5 premium-shadow border border-gray-100 transition-all duration-300 hover:-translate-y-2 cursor-pointer overflow-hidden"
-    >
-      {isRecommended && (
-        <div className="absolute top-4 right-4 z-20 bg-teal-400 text-white text-[9px] font-black uppercase px-3 py-1 rounded-full shadow-lg animate-pulse">Critical</div>
-      )}
-      <div className="h-40 w-full rounded-[30px] overflow-hidden mb-5 relative bg-gray-50 flex items-center justify-center">
-        <img src={image} alt={title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-      </div>
-      <div className="flex items-center gap-2 mb-3">
-        <span className="text-[9px] font-black uppercase tracking-widest bg-gray-50 text-gray-500 px-3 py-1 rounded-full border border-gray-100">{intensity}</span>
-        <span className="text-[9px] font-black uppercase tracking-widest bg-teal-50 text-teal-600 px-3 py-1 rounded-full border border-teal-100">{time}</span>
-      </div>
-      <h4 className="text-lg font-black text-gray-800 mb-1 group-hover:text-teal-600 transition-colors">{title}</h4>
-      <p className="text-xs text-gray-400 font-medium leading-relaxed">{description}</p>
     </div>
   );
 };
