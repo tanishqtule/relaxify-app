@@ -75,6 +75,37 @@ const BlinkRing: React.FC<{ rate: number; isStrained: boolean }> = ({ rate, isSt
   );
 };
 
+/* ── Floating stat pill ─────────────────────────────────────────── */
+const StatPill: React.FC<{
+  icon: string; value: string; label: string; color: string; delay?: number;
+}> = ({ icon, value, label, color, delay = 0 }) => (
+  <div
+    className="stat-pill"
+    style={{ animation: `entrance 0.55s cubic-bezier(0.16,1,0.3,1) ${delay}ms both` }}
+  >
+    <div
+      className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl"
+      style={{ background: `${color}18`, border: `1px solid ${color}30`, flexShrink: 0 }}
+    >
+      {icon}
+    </div>
+    <div>
+      <p
+        className="text-xl font-black leading-none animate-number"
+        style={{ color, animationDelay: `${delay + 100}ms` }}
+      >
+        {value}
+      </p>
+      <p
+        className="text-[9px] font-black uppercase tracking-widest mt-1"
+        style={{ color: 'var(--text-muted)' }}
+      >
+        {label}
+      </p>
+    </div>
+  </div>
+);
+
 /* ── Animated activity cell ─────────────────────────────────────── */
 const ActivityCell: React.FC<{ level: 0|1|2|3|4; delay: number }> = ({ level, delay }) => {
   const classes = [
@@ -114,90 +145,87 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
   onClick, isRecommended, index,
 }) => {
   return (
-    <TiltCard
-      className="card-base rounded-[36px] p-5 relative overflow-hidden"
-      intensity={10}
-      shine
-      onClick={onClick}
-      style={{
-        cursor: 'pointer',
-        animation: `entrance 0.55s cubic-bezier(0.16,1,0.3,1) ${index * 80}ms both`,
-      } as React.CSSProperties}
+    /* Outer wrapper adds rotating conic glow border on hover */
+    <div
+      className="exercise-card-outer"
+      style={{ animation: `entrance 0.55s cubic-bezier(0.16,1,0.3,1) ${index * 80}ms both` }}
     >
-      {/* Recommended badge */}
-      {isRecommended && (
+      <TiltCard
+        className="card-base rounded-[36px] p-5 relative overflow-hidden"
+        intensity={10}
+        shine
+        onClick={onClick}
+        style={{ cursor: 'pointer' } as React.CSSProperties}
+      >
+        {/* Recommended badge */}
+        {isRecommended && (
+          <div
+            className="absolute top-4 right-4 z-20 badge badge-neon animate-pulse"
+            role="status"
+            aria-label="Recommended: eye strain detected"
+          >
+            ⚡ Critical
+          </div>
+        )}
+
+        {/* Image area — zoom driven by CSS via exercise-card-outer:hover */}
         <div
-          className="absolute top-4 right-4 z-20 badge badge-red animate-pulse"
-          role="status"
-          aria-label="Recommended: eye strain detected"
+          className="h-44 w-full rounded-[26px] mb-5 overflow-hidden relative"
+          style={{ background: 'var(--border-card)' }}
         >
-          ⚡ Critical
+          <img
+            src={image}
+            alt={title}
+            className="exercise-card-img w-full h-full object-cover"
+            loading="lazy"
+          />
+          {/* Gradient overlay */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: 'linear-gradient(to top, rgba(10,22,40,0.55) 0%, transparent 60%)',
+            }}
+          />
         </div>
-      )}
 
-      {/* Image area */}
-      <div
-        className="h-44 w-full rounded-[26px] mb-5 overflow-hidden relative"
-        style={{ background: 'var(--border-card)' }}
-      >
-        <img
-          src={image}
-          alt={title}
-          className="w-full h-full object-cover"
-          style={{ transition: 'transform 0.7s cubic-bezier(0.34,1.56,0.64,1)' }}
-          onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.12)')}
-          onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
-          loading="lazy"
-        />
-        {/* Gradient overlay */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: 'linear-gradient(to top, rgba(10,22,40,0.5) 0%, transparent 60%)',
-          }}
-        />
-      </div>
+        {/* Meta chips */}
+        <div className="flex items-center gap-2 mb-3">
+          <span
+            className="badge"
+            style={{
+              background: `${intensityColor}15`,
+              color: intensityColor,
+              border: `1px solid ${intensityColor}30`,
+            }}
+          >
+            {intensity}
+          </span>
+          <span className="badge badge-teal">{time}</span>
+        </div>
 
-      {/* Meta chips */}
-      <div className="flex items-center gap-2 mb-3">
-        <span
-          className="badge"
-          style={{
-            background: `${intensityColor}15`,
-            color: intensityColor,
-            border: `1px solid ${intensityColor}30`,
-          }}
+        {/* Text */}
+        <h4
+          className="text-lg font-black mb-1.5"
+          style={{ color: 'var(--text-primary)', transition: 'color 0.2s ease' }}
         >
-          {intensity}
-        </span>
-        <span className="badge badge-teal">{time}</span>
-      </div>
+          {title}
+        </h4>
+        <p className="text-xs font-medium leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          {description}
+        </p>
 
-      {/* Text */}
-      <h4
-        className="text-lg font-black mb-1.5 group-hover:text-gradient"
-        style={{
-          color: 'var(--text-primary)',
-          transition: 'color 0.2s ease',
-        }}
-      >
-        {title}
-      </h4>
-      <p className="text-xs font-medium leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-        {description}
-      </p>
-
-      {/* Start button hint */}
-      <div
-        className="mt-4 flex items-center gap-2"
-        style={{ color: '#38F9D7', fontSize: 11, fontWeight: 800, letterSpacing: '0.1em' }}
-      >
-        <span>START SESSION</span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-          <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </div>
-    </TiltCard>
+        {/* Start button hint — arrow slides right on hover via CSS */}
+        <div
+          className="mt-4 flex items-center gap-2 exercise-start-label"
+          style={{ color: '#38F9D7', fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', transition: 'color 0.3s ease' }}
+        >
+          <span>START SESSION</span>
+          <svg className="exercise-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+            <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+      </TiltCard>
+    </div>
   );
 };
 
@@ -345,10 +373,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
+      {/* ── Floating stats strip ─────────────────────────── */}
+      <div
+        className="flex gap-4 flex-wrap"
+        style={{ animation: 'entrance 0.65s cubic-bezier(0.16,1,0.3,1) 120ms both' }}
+        role="region"
+        aria-label="Wellness stats"
+      >
+        <StatPill icon="⚡" value="2,840" label="Total XP"   color="#38F9D7" delay={0}   />
+        <StatPill icon="🔥" value="7"     label="Day Streak" color="#F59E0B" delay={80}  />
+        <StatPill icon="💎" value="24"    label="Sessions"   color="#A78BFA" delay={160} />
+        <StatPill icon="🎯" value="92%"   label="Wellness"   color="#60A5FA" delay={240} />
+      </div>
+
       {/* ── Hero cards row ────────────────────────────────── */}
       <div
         className="grid grid-cols-1 lg:grid-cols-3 gap-6"
-        style={{ animation: 'entrance 0.65s cubic-bezier(0.16,1,0.3,1) 200ms both' }}
+        style={{ animation: 'entrance 0.65s cubic-bezier(0.16,1,0.3,1) 260ms both' }}
       >
         {/* Daily momentum — dark card */}
         <TiltCard
@@ -359,11 +400,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
             background: 'linear-gradient(145deg, #0D1F35 0%, #132A45 50%, #091825 100%)',
           } as React.CSSProperties}
         >
+          {/* Perspective depth grid */}
+          <div className="hero-depth-grid" style={{ borderRadius: 48, opacity: 0.6 }} />
+
           {/* Ambient glow orbs inside card */}
           <div
             className="absolute top-[-60px] right-[-60px] w-72 h-72 rounded-full"
             style={{
-              background: 'radial-gradient(circle, rgba(56,249,215,0.25) 0%, transparent 70%)',
+              background: 'radial-gradient(circle, rgba(56,249,215,0.3) 0%, transparent 70%)',
               filter: 'blur(30px)',
               animation: 'float 8s ease-in-out infinite',
             }}
@@ -371,8 +415,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div
             className="absolute bottom-[-80px] left-10 w-80 h-80 rounded-full"
             style={{
-              background: 'radial-gradient(circle, rgba(96,165,250,0.12) 0%, transparent 70%)',
+              background: 'radial-gradient(circle, rgba(96,165,250,0.15) 0%, transparent 70%)',
               filter: 'blur(40px)',
+              animation: 'float 11s ease-in-out 2s infinite',
+            }}
+          />
+          {/* Extra corner orb */}
+          <div
+            className="absolute bottom-10 right-[-30px] w-48 h-48 rounded-full"
+            style={{
+              background: 'radial-gradient(circle, rgba(167,139,250,0.18) 0%, transparent 70%)',
+              filter: 'blur(25px)',
+              animation: 'float 9s ease-in-out 1s infinite',
             }}
           />
 
@@ -454,7 +508,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* Activity intensity card */}
         <TiltCard
-          className="card-base rounded-[48px] p-8 flex flex-col justify-between"
+          className="card-base holo-card rounded-[48px] p-8 flex flex-col justify-between"
           intensity={8}
           shine
         >
