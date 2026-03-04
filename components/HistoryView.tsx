@@ -5,6 +5,7 @@ import { AnimatedCounter } from './AnimatedCounter';
 
 interface HistoryViewProps {
   sessions: ExerciseSession[];
+  onClear?: () => void;
 }
 
 const EXERCISE_META: Record<string, { emoji: string; color: string; label: string }> = {
@@ -15,6 +16,51 @@ const EXERCISE_META: Record<string, { emoji: string; color: string; label: strin
   [ExerciseType.EYE_FOCUS]:     { emoji: '👁',  color: '#34D399', label: 'Eye Reset' },
   [ExerciseType.ERGO_SCAN]:     { emoji: '📡', color: '#818CF8', label: 'Ergo Scan' },
 };
+
+type Period = 'week' | 'month' | 'all';
+type ExFilter = ExerciseType | 'all';
+
+/* ── Real streak calculation ─────────────────────────────────── */
+function computeStreak(sessions: ExerciseSession[]): number {
+  if (!sessions.length) return 0;
+  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const days = new Set(sessions.map(s => dayKey(new Date(s.timestamp))));
+  const today = new Date();
+  const hasToday = days.has(dayKey(today));
+  let streak = 0;
+  for (let i = hasToday ? 0 : 1; i < 365; i++) {
+    const d = new Date();
+    d.setDate(today.getDate() - i);
+    if (days.has(dayKey(d))) streak++;
+    else break;
+  }
+  return streak;
+}
+
+/* ── CSV export ──────────────────────────────────────────────── */
+function exportToCSV(sessions: ExerciseSession[]) {
+  const header = 'Date,Time,Exercise,Reps,XP Reward';
+  const rows = sessions.map(s => {
+    const d = new Date(s.timestamp);
+    return [
+      d.toLocaleDateString(),
+      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      `"${EXERCISE_META[s.exercise]?.label ?? s.exercise}"`,
+      s.counter,
+      s.reward,
+    ].join(',');
+  });
+  const csv  = [header, ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `relaxify-history-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 /* ── Animated stat card ─────────────────────────────────────── */
 const StatCard: React.FC<{
@@ -30,7 +76,6 @@ const StatCard: React.FC<{
   useEffect(() => {
     const el = cardRef.current;
     if (!el) return;
-    // Intersection observer for entrance animation
     const io = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting) {
         el.style.opacity = '1';
@@ -104,7 +149,6 @@ const StatCard: React.FC<{
 const MiniBarChart: React.FC<{ sessions: ExerciseSession[] }> = ({ sessions }) => {
   if (sessions.length === 0) return null;
 
-  // Group by day (last 7 days)
   const dayData: number[] = Array(7).fill(0);
   const now = Date.now();
   sessions.forEach(s => {
@@ -208,7 +252,6 @@ const HistoryItem: React.FC<{ session: ExerciseSession; index: number; isLast: b
         >
           {meta.emoji}
         </div>
-        {/* Connector line to next item */}
         {!isLast && (
           <div
             className="absolute left-1/2 -translate-x-1/2"
@@ -269,7 +312,6 @@ const HistoryItem: React.FC<{ session: ExerciseSession; index: number; isLast: b
           className="flex items-center gap-4 sm:border-l sm:pl-5"
           style={{ borderColor: 'var(--border-card)' }}
         >
-          {/* Reps */}
           <div className="text-center">
             <p
               className="text-[9px] font-black uppercase tracking-widest mb-1"
@@ -291,7 +333,6 @@ const HistoryItem: React.FC<{ session: ExerciseSession; index: number; isLast: b
             </p>
           </div>
 
-          {/* Reward pill */}
           <div
             className="px-5 py-3 rounded-2xl text-center"
             style={{
@@ -327,7 +368,6 @@ const EmptyState: React.FC = () => (
     role="region"
     aria-label="No sessions yet"
   >
-    {/* Breathing orb */}
     <div className="relative mb-10">
       <div
         className="w-40 h-40 rounded-full flex items-center justify-center text-5xl animate-breathe"
@@ -373,9 +413,33 @@ const EmptyState: React.FC = () => (
   </div>
 );
 
+/* ── Filter pill button ──────────────────────────────────────── */
+const FilterPill: React.FC<{
+  active: boolean;
+  onClick: () => void;
+  color?: string;
+  children: React.ReactNode;
+}> = ({ active, onClick, color = '#38F9D7', children }) => (
+  <button
+    onClick={onClick}
+    className="px-4 py-1.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all"
+    style={{
+      background: active ? `${color}20` : 'var(--bg-card)',
+      color: active ? color : 'var(--text-muted)',
+      border: `1px solid ${active ? `${color}40` : 'var(--border-card)'}`,
+      boxShadow: active ? `0 0 12px ${color}20` : 'none',
+    }}
+  >
+    {children}
+  </button>
+);
+
 /* ── Main HistoryView ────────────────────────────────────────── */
-export const HistoryView: React.FC<HistoryViewProps> = ({ sessions }) => {
-  const [isSyncing, setIsSyncing] = useState(true);
+export const HistoryView: React.FC<HistoryViewProps> = ({ sessions, onClear }) => {
+  const [isSyncing,    setIsSyncing]    = useState(true);
+  const [period,       setPeriod]       = useState<Period>('all');
+  const [exFilter,     setExFilter]     = useState<ExFilter>('all');
+  const [confirmClear, setConfirmClear] = useState(false);
 
   useEffect(() => {
     const tid = setTimeout(() => setIsSyncing(false), 800);
@@ -384,9 +448,27 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ sessions }) => {
 
   if (!isSyncing && sessions.length === 0) return <EmptyState />;
 
-  const totalPoints = sessions.reduce((a, s) => a + s.reward,  0);
-  const totalReps   = sessions.reduce((a, s) => a + s.counter, 0);
-  const streakDays  = Math.min(sessions.length, 7);
+  /* ── Apply filters ────────────────────────────────────── */
+  const now = Date.now();
+  const periodCutoff: Record<Period, number> = {
+    week:  now - 7  * 86_400_000,
+    month: now - 30 * 86_400_000,
+    all:   0,
+  };
+
+  const filtered = sessions.filter(s => {
+    const t = new Date(s.timestamp).getTime();
+    if (t < periodCutoff[period]) return false;
+    if (exFilter !== 'all' && s.exercise !== exFilter) return false;
+    return true;
+  });
+
+  /* ── Aggregate stats from ALL sessions (not filtered) ─── */
+  const totalPoints  = sessions.reduce((a, s) => a + s.reward,  0);
+  const totalReps    = sessions.reduce((a, s) => a + s.counter, 0);
+  const streakDays   = computeStreak(sessions);
+
+  const exerciseTypes = Object.keys(EXERCISE_META) as ExerciseType[];
 
   return (
     <div
@@ -427,8 +509,67 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ sessions }) => {
           </p>
         </div>
 
-        <div className="badge badge-purple" style={{ padding: '8px 16px', fontSize: 11 }}>
-          {sessions.length} session{sessions.length !== 1 ? 's' : ''} recorded
+        {/* Action buttons */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={() => exportToCSV(filtered)}
+            disabled={filtered.length === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all"
+            style={{
+              background: 'rgba(56,249,215,0.1)',
+              color: '#38F9D7',
+              border: '1px solid rgba(56,249,215,0.2)',
+              opacity: filtered.length === 0 ? 0.4 : 1,
+              cursor: filtered.length === 0 ? 'not-allowed' : 'pointer',
+            }}
+            aria-label="Export history as CSV"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+            Export CSV
+          </button>
+
+          {confirmClear ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-black" style={{ color: '#EF4444' }}>Clear all?</span>
+              <button
+                onClick={() => { onClear?.(); setConfirmClear(false); }}
+                className="px-3 py-1.5 rounded-xl text-[11px] font-black uppercase"
+                style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.3)' }}
+              >
+                Yes
+              </button>
+              <button
+                onClick={() => setConfirmClear(false)}
+                className="px-3 py-1.5 rounded-xl text-[11px] font-black uppercase"
+                style={{ background: 'var(--bg-card)', color: 'var(--text-muted)', border: '1px solid var(--border-card)' }}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmClear(true)}
+              disabled={sessions.length === 0}
+              className="flex items-center gap-2 px-4 py-2 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all"
+              style={{
+                background: 'rgba(239,68,68,0.08)',
+                color: '#EF4444',
+                border: '1px solid rgba(239,68,68,0.15)',
+                opacity: sessions.length === 0 ? 0.4 : 1,
+                cursor: sessions.length === 0 ? 'not-allowed' : 'pointer',
+              }}
+              aria-label="Clear all history"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
@@ -460,6 +601,53 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ sessions }) => {
       {/* ── Weekly chart ─────────────────────────────────── */}
       <MiniBarChart sessions={sessions} />
 
+      {/* ── Filter bar ───────────────────────────────────── */}
+      <div className="space-y-3">
+        {/* Period filter */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span
+            className="text-[9px] font-black uppercase tracking-widest mr-1"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Period
+          </span>
+          <FilterPill active={period === 'week'}  onClick={() => setPeriod('week')}>This Week</FilterPill>
+          <FilterPill active={period === 'month'} onClick={() => setPeriod('month')}>This Month</FilterPill>
+          <FilterPill active={period === 'all'}   onClick={() => setPeriod('all')}>All Time</FilterPill>
+        </div>
+
+        {/* Exercise type filter */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span
+            className="text-[9px] font-black uppercase tracking-widest mr-1"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Type
+          </span>
+          <FilterPill active={exFilter === 'all'} onClick={() => setExFilter('all')}>All</FilterPill>
+          {exerciseTypes.map(ex => {
+            const meta = EXERCISE_META[ex];
+            return (
+              <FilterPill
+                key={ex}
+                active={exFilter === ex}
+                onClick={() => setExFilter(ex)}
+                color={meta.color}
+              >
+                {meta.emoji} {meta.label}
+              </FilterPill>
+            );
+          })}
+        </div>
+
+        {/* Result count */}
+        <div className="flex items-center justify-between px-1">
+          <p className="text-[10px] font-bold" style={{ color: 'var(--text-muted)' }}>
+            Showing <strong style={{ color: 'var(--text-primary)' }}>{filtered.length}</strong> of {sessions.length} sessions
+          </p>
+        </div>
+      </div>
+
       {/* ── Timeline of sessions ─────────────────────────── */}
       <section aria-label="Session history timeline">
         <h3
@@ -469,16 +657,25 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ sessions }) => {
           Recent Sessions
         </h3>
 
-        {sessions.length > 0 && (
+        {filtered.length > 0 ? (
           <div className="relative">
-            {sessions.map((session, index) => (
+            {filtered.map((session, index) => (
               <HistoryItem
                 key={session.id}
                 session={session}
                 index={index}
-                isLast={index === sessions.length - 1}
+                isLast={index === filtered.length - 1}
               />
             ))}
+          </div>
+        ) : (
+          <div
+            className="flex flex-col items-center py-16 text-center"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <p className="text-4xl mb-4">🔍</p>
+            <p className="font-black text-lg mb-1" style={{ color: 'var(--text-primary)' }}>No sessions found</p>
+            <p className="text-sm">Try adjusting your filters.</p>
           </div>
         )}
       </section>

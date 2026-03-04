@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { ExerciseType, UserMonitoring } from '../types';
+import { ExerciseType, ExerciseSession, UserMonitoring } from '../types';
 import { TiltCard } from './TiltCard';
 
 interface DashboardProps {
   onStartExercise: (type: ExerciseType) => void;
   userName: string;
   monitoring?: UserMonitoring;
+  history?: ExerciseSession[];
 }
 
 const QUOTES = [
@@ -25,6 +26,60 @@ const EXERCISE_IMAGES = {
   [ExerciseType.MEDITATION]:    "https://images.unsplash.com/photo-1508672019048-805c876b67e2?auto=format&fit=crop&q=80&w=600",
   [ExerciseType.EYE_FOCUS]:     "https://images.unsplash.com/photo-1516733725897-1aa73b87c8e8?auto=format&fit=crop&q=80&w=600",
 };
+
+/* ── Compute real stats from history ───────────────────────────── */
+function computeStats(history: ExerciseSession[]) {
+  const totalXP     = history.reduce((s, h) => s + h.reward, 0);
+  const sessionCount = history.length;
+
+  if (!history.length) {
+    return { totalXP: 0, sessionCount: 0, streakDays: 0, wellnessScore: 0, todayProgress: 0 };
+  }
+
+  // Build a set of "YYYY-M-D" strings for days with sessions
+  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const days = new Set(history.map(s => dayKey(new Date(s.timestamp))));
+
+  // Consecutive-day streak (allow today OR yesterday as start)
+  const today = new Date();
+  const hasToday = days.has(dayKey(today));
+  let streakDays = 0;
+  for (let i = hasToday ? 0 : 1; i < 365; i++) {
+    const d = new Date();
+    d.setDate(today.getDate() - i);
+    if (days.has(dayKey(d))) streakDays++;
+    else break;
+  }
+
+  // Wellness score: sessions this week / weekly goal of 10
+  const weekAgo = Date.now() - 7 * 86_400_000;
+  const thisWeekCount = history.filter(s => new Date(s.timestamp).getTime() >= weekAgo).length;
+  const wellnessScore = Math.min(Math.round((thisWeekCount / 10) * 100), 100);
+
+  // Daily progress: sessions today / daily goal of 3
+  const todayStr = dayKey(today);
+  const todaySessions = history.filter(s => dayKey(new Date(s.timestamp)) === todayStr).length;
+  const todayProgress = Math.min(Math.round((todaySessions / 3) * 100), 100);
+
+  return { totalXP, sessionCount, streakDays, wellnessScore, todayProgress };
+}
+
+/* ── Build 28-day activity heatmap from real history ───────────── */
+function buildHeatmap(history: ExerciseSession[]): (0|1|2|3|4)[] {
+  return Array.from({ length: 28 }, (_, i) => {
+    const dayOffset = 27 - i;
+    const d = new Date();
+    d.setDate(d.getDate() - dayOffset);
+    d.setHours(0, 0, 0, 0);
+    const dayStart = d.getTime();
+    const dayEnd   = dayStart + 86_400_000;
+    const count    = history.filter(s => {
+      const t = new Date(s.timestamp).getTime();
+      return t >= dayStart && t < dayEnd;
+    }).length;
+    return (count === 0 ? 0 : count === 1 ? 1 : count <= 3 ? 2 : count <= 5 ? 3 : 4) as 0|1|2|3|4;
+  });
+}
 
 /* ── Animated eye health ring ───────────────────────────────────── */
 const BlinkRing: React.FC<{ rate: number; isStrained: boolean }> = ({ rate, isStrained }) => {
@@ -75,6 +130,37 @@ const BlinkRing: React.FC<{ rate: number; isStrained: boolean }> = ({ rate, isSt
   );
 };
 
+/* ── Floating stat pill ─────────────────────────────────────────── */
+const StatPill: React.FC<{
+  icon: string; value: string; label: string; color: string; delay?: number;
+}> = ({ icon, value, label, color, delay = 0 }) => (
+  <div
+    className="stat-pill"
+    style={{ animation: `entrance 0.55s cubic-bezier(0.16,1,0.3,1) ${delay}ms both` }}
+  >
+    <div
+      className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl"
+      style={{ background: `${color}18`, border: `1px solid ${color}30`, flexShrink: 0 }}
+    >
+      {icon}
+    </div>
+    <div>
+      <p
+        className="text-xl font-black leading-none animate-number"
+        style={{ color, animationDelay: `${delay + 100}ms` }}
+      >
+        {value}
+      </p>
+      <p
+        className="text-[9px] font-black uppercase tracking-widest mt-1"
+        style={{ color: 'var(--text-muted)' }}
+      >
+        {label}
+      </p>
+    </div>
+  </div>
+);
+
 /* ── Animated activity cell ─────────────────────────────────────── */
 const ActivityCell: React.FC<{ level: 0|1|2|3|4; delay: number }> = ({ level, delay }) => {
   const classes = [
@@ -114,96 +200,93 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
   onClick, isRecommended, index,
 }) => {
   return (
-    <TiltCard
-      className="card-base rounded-[36px] p-5 relative overflow-hidden"
-      intensity={10}
-      shine
-      onClick={onClick}
-      style={{
-        cursor: 'pointer',
-        animation: `entrance 0.55s cubic-bezier(0.16,1,0.3,1) ${index * 80}ms both`,
-      } as React.CSSProperties}
+    /* Outer wrapper adds rotating conic glow border on hover */
+    <div
+      className="exercise-card-outer"
+      style={{ animation: `entrance 0.55s cubic-bezier(0.16,1,0.3,1) ${index * 80}ms both` }}
     >
-      {/* Recommended badge */}
-      {isRecommended && (
+      <TiltCard
+        className="card-base rounded-[36px] p-5 relative overflow-hidden"
+        intensity={10}
+        shine
+        onClick={onClick}
+        style={{ cursor: 'pointer' } as React.CSSProperties}
+      >
+        {/* Recommended badge */}
+        {isRecommended && (
+          <div
+            className="absolute top-4 right-4 z-20 badge badge-neon animate-pulse"
+            role="status"
+            aria-label="Recommended: eye strain detected"
+          >
+            ⚡ Critical
+          </div>
+        )}
+
+        {/* Image area — zoom driven by CSS via exercise-card-outer:hover */}
         <div
-          className="absolute top-4 right-4 z-20 badge badge-red animate-pulse"
-          role="status"
-          aria-label="Recommended: eye strain detected"
+          className="h-44 w-full rounded-[26px] mb-5 overflow-hidden relative"
+          style={{ background: 'var(--border-card)' }}
         >
-          ⚡ Critical
+          <img
+            src={image}
+            alt={title}
+            className="exercise-card-img w-full h-full object-cover"
+            loading="lazy"
+          />
+          {/* Gradient overlay */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: 'linear-gradient(to top, rgba(10,22,40,0.55) 0%, transparent 60%)',
+            }}
+          />
         </div>
-      )}
 
-      {/* Image area */}
-      <div
-        className="h-44 w-full rounded-[26px] mb-5 overflow-hidden relative"
-        style={{ background: 'var(--border-card)' }}
-      >
-        <img
-          src={image}
-          alt={title}
-          className="w-full h-full object-cover"
-          style={{ transition: 'transform 0.7s cubic-bezier(0.34,1.56,0.64,1)' }}
-          onMouseEnter={e => (e.currentTarget.style.transform = 'scale(1.12)')}
-          onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}
-          loading="lazy"
-        />
-        {/* Gradient overlay */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: 'linear-gradient(to top, rgba(10,22,40,0.5) 0%, transparent 60%)',
-          }}
-        />
-      </div>
+        {/* Meta chips */}
+        <div className="flex items-center gap-2 mb-3">
+          <span
+            className="badge"
+            style={{
+              background: `${intensityColor}15`,
+              color: intensityColor,
+              border: `1px solid ${intensityColor}30`,
+            }}
+          >
+            {intensity}
+          </span>
+          <span className="badge badge-teal">{time}</span>
+        </div>
 
-      {/* Meta chips */}
-      <div className="flex items-center gap-2 mb-3">
-        <span
-          className="badge"
-          style={{
-            background: `${intensityColor}15`,
-            color: intensityColor,
-            border: `1px solid ${intensityColor}30`,
-          }}
+        {/* Text */}
+        <h4
+          className="text-lg font-black mb-1.5"
+          style={{ color: 'var(--text-primary)', transition: 'color 0.2s ease' }}
         >
-          {intensity}
-        </span>
-        <span className="badge badge-teal">{time}</span>
-      </div>
+          {title}
+        </h4>
+        <p className="text-xs font-medium leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          {description}
+        </p>
 
-      {/* Text */}
-      <h4
-        className="text-lg font-black mb-1.5 group-hover:text-gradient"
-        style={{
-          color: 'var(--text-primary)',
-          transition: 'color 0.2s ease',
-        }}
-      >
-        {title}
-      </h4>
-      <p className="text-xs font-medium leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-        {description}
-      </p>
-
-      {/* Start button hint */}
-      <div
-        className="mt-4 flex items-center gap-2"
-        style={{ color: '#38F9D7', fontSize: 11, fontWeight: 800, letterSpacing: '0.1em' }}
-      >
-        <span>START SESSION</span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-          <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </div>
-    </TiltCard>
+        {/* Start button hint — arrow slides right on hover via CSS */}
+        <div
+          className="mt-4 flex items-center gap-2 exercise-start-label"
+          style={{ color: '#38F9D7', fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', transition: 'color 0.3s ease' }}
+        >
+          <span>START SESSION</span>
+          <svg className="exercise-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+            <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+      </TiltCard>
+    </div>
   );
 };
 
 /* ── Dashboard ──────────────────────────────────────────────────── */
 export const Dashboard: React.FC<DashboardProps> = ({
-  onStartExercise, userName, monitoring,
+  onStartExercise, userName, monitoring, history = [],
 }) => {
   const [quote,    setQuote]    = useState('');
   const [greeting, setGreeting] = useState('');
@@ -220,14 +303,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return () => clearTimeout(tid);
   }, []);
 
-  // Activity grid data — 28 cells with varied intensity
-  const activityData: (0|1|2|3|4)[] = Array.from({ length: 28 }, (_, i) => {
-    if (i > 22) return 4;
-    if (i > 18) return 3;
-    if (i > 13) return 2;
-    if (i > 8)  return 1;
-    return 0;
-  });
+  const { totalXP, sessionCount, streakDays, wellnessScore, todayProgress } = computeStats(history);
+  const activityData = buildHeatmap(history);
 
   return (
     <div className="space-y-8 max-w-7xl" style={{ opacity: mounted ? 1 : 0, transition: 'opacity 0.4s ease' }}>
@@ -345,10 +422,47 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
+      {/* ── Live stats strip ─────────────────────────────── */}
+      <div
+        className="flex gap-4 flex-wrap"
+        style={{ animation: 'entrance 0.65s cubic-bezier(0.16,1,0.3,1) 120ms both' }}
+        role="region"
+        aria-label="Wellness stats"
+      >
+        <StatPill
+          icon="⚡"
+          value={totalXP.toLocaleString()}
+          label="Total XP"
+          color="#38F9D7"
+          delay={0}
+        />
+        <StatPill
+          icon="🔥"
+          value={String(streakDays)}
+          label="Day Streak"
+          color="#F59E0B"
+          delay={80}
+        />
+        <StatPill
+          icon="💎"
+          value={String(sessionCount)}
+          label="Sessions"
+          color="#A78BFA"
+          delay={160}
+        />
+        <StatPill
+          icon="🎯"
+          value={`${wellnessScore}%`}
+          label="Wellness"
+          color="#60A5FA"
+          delay={240}
+        />
+      </div>
+
       {/* ── Hero cards row ────────────────────────────────── */}
       <div
         className="grid grid-cols-1 lg:grid-cols-3 gap-6"
-        style={{ animation: 'entrance 0.65s cubic-bezier(0.16,1,0.3,1) 200ms both' }}
+        style={{ animation: 'entrance 0.65s cubic-bezier(0.16,1,0.3,1) 260ms both' }}
       >
         {/* Daily momentum — dark card */}
         <TiltCard
@@ -359,11 +473,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
             background: 'linear-gradient(145deg, #0D1F35 0%, #132A45 50%, #091825 100%)',
           } as React.CSSProperties}
         >
+          {/* Perspective depth grid */}
+          <div className="hero-depth-grid" style={{ borderRadius: 48, opacity: 0.6 }} />
+
           {/* Ambient glow orbs inside card */}
           <div
             className="absolute top-[-60px] right-[-60px] w-72 h-72 rounded-full"
             style={{
-              background: 'radial-gradient(circle, rgba(56,249,215,0.25) 0%, transparent 70%)',
+              background: 'radial-gradient(circle, rgba(56,249,215,0.3) 0%, transparent 70%)',
               filter: 'blur(30px)',
               animation: 'float 8s ease-in-out infinite',
             }}
@@ -371,8 +488,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div
             className="absolute bottom-[-80px] left-10 w-80 h-80 rounded-full"
             style={{
-              background: 'radial-gradient(circle, rgba(96,165,250,0.12) 0%, transparent 70%)',
+              background: 'radial-gradient(circle, rgba(96,165,250,0.15) 0%, transparent 70%)',
               filter: 'blur(40px)',
+              animation: 'float 11s ease-in-out 2s infinite',
+            }}
+          />
+          <div
+            className="absolute bottom-10 right-[-30px] w-48 h-48 rounded-full"
+            style={{
+              background: 'radial-gradient(circle, rgba(167,139,250,0.18) 0%, transparent 70%)',
+              filter: 'blur(25px)',
+              animation: 'float 9s ease-in-out 1s infinite',
             }}
           />
 
@@ -388,10 +514,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 className="font-black mb-4"
                 style={{ fontSize: 'clamp(1.6rem, 3vw, 2.4rem)', color: '#DCF0EC' }}
               >
-                Ready to Focus?
+                {todayProgress >= 100 ? 'Goal Crushed! 🎉' : 'Ready to Focus?'}
               </h2>
               <p style={{ color: 'rgba(122,171,184,0.9)', maxWidth: 360, lineHeight: 1.7 }}>
-                Consistency is key. Every session improves cognitive performance and physical longevity.
+                {todayProgress >= 100
+                  ? "You've hit your daily target. Keep the momentum going!"
+                  : 'Consistency is key. Every session improves cognitive performance and physical longevity.'}
               </p>
             </div>
 
@@ -402,19 +530,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   className="flex justify-between text-xs font-black uppercase tracking-widest mb-3"
                   style={{ color: 'rgba(220,240,236,0.8)' }}
                 >
-                  <span>Progress towards goal</span>
-                  <span style={{ color: '#38F9D7' }}>85%</span>
+                  <span>Daily goal progress</span>
+                  <span style={{ color: '#38F9D7' }}>{todayProgress}%</span>
                 </div>
                 <div
                   className="h-3 rounded-full overflow-hidden p-0.5"
                   style={{ background: 'rgba(255,255,255,0.08)' }}
                 >
                   <div
+                    ref={progressRef}
                     className="h-full rounded-full progress-fill"
                     style={{
-                      width: '85%',
+                      width: `${todayProgress}%`,
                       background: 'linear-gradient(90deg, #38F9D7, #20C997)',
                       boxShadow: '0 0 12px rgba(56,249,215,0.7)',
+                      transition: 'width 1.2s cubic-bezier(0.34,1.56,0.64,1)',
                     }}
                   />
                 </div>
@@ -454,7 +584,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* Activity intensity card */}
         <TiltCard
-          className="card-base rounded-[48px] p-8 flex flex-col justify-between"
+          className="card-base holo-card rounded-[48px] p-8 flex flex-col justify-between"
           intensity={8}
           shine
         >
@@ -495,7 +625,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               </div>
             </div>
 
-            {/* 4-week grid */}
+            {/* 4-week grid from real session data */}
             <div
               className="grid gap-1.5"
               style={{ gridTemplateColumns: 'repeat(7, 1fr)' }}

@@ -2,32 +2,28 @@
 import React, { useEffect, useRef } from 'react';
 
 /**
- * CustomCursor — context-aware morphing cursor.
- * Uses rAF + direct DOM mutation (no React re-renders) for 60fps performance.
+ * CustomCursor — single gradient glow that follows mouse directly (no lerp = no lag).
+ * Tiny dot for precision + large soft radial glow for atmosphere.
+ * Uses rAF + direct DOM mutation for 60fps with zero React re-renders.
  */
 export const CustomCursor: React.FC = () => {
   const dotRef  = useRef<HTMLDivElement>(null);
-  const ringRef = useRef<HTMLDivElement>(null);
-  const posRef  = useRef({ x: -200, y: -200 });
-  const trailRef = useRef({ x: -200, y: -200 });
-  const rafRef   = useRef<number>(0);
+  const glowRef = useRef<HTMLDivElement>(null);
+  const posRef  = useRef({ x: -300, y: -300 });
+  const rafRef  = useRef<number>(0);
 
   useEffect(() => {
-    // RAF animation loop — lerp the ring toward the dot
+    // Direct follow — no lerp = no lag perception
     const animate = () => {
-      trailRef.current.x += (posRef.current.x - trailRef.current.x) * 0.11;
-      trailRef.current.y += (posRef.current.y - trailRef.current.y) * 0.11;
+      const { x, y } = posRef.current;
 
       if (dotRef.current) {
-        dotRef.current.style.transform =
-          `translate(${posRef.current.x - 3}px, ${posRef.current.y - 3}px)`;
+        dotRef.current.style.transform = `translate(${x - 3}px, ${y - 3}px)`;
       }
-
-      if (ringRef.current) {
-        const halfW = ringRef.current.offsetWidth  / 2;
-        const halfH = ringRef.current.offsetHeight / 2;
-        ringRef.current.style.transform =
-          `translate(${trailRef.current.x - halfW}px, ${trailRef.current.y - halfH}px)`;
+      if (glowRef.current) {
+        // offsetWidth tracks CSS transitions (glow expands on hover)
+        const half = glowRef.current.offsetWidth / 2;
+        glowRef.current.style.transform = `translate(${x - half}px, ${y - half}px)`;
       }
 
       rafRef.current = requestAnimationFrame(animate);
@@ -42,34 +38,34 @@ export const CustomCursor: React.FC = () => {
       const isBtn   = !!(t.closest('button') || t.closest('a') || t.tagName === 'BUTTON');
       const isInput = t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT';
 
-      if (!ringRef.current) return;
-      ringRef.current.classList.remove('is-hover', 'is-text', 'is-click');
+      if (!glowRef.current) return;
+      glowRef.current.classList.remove('is-hover', 'is-text', 'is-click');
 
-      if (isBtn)        ringRef.current.classList.add('is-hover');
-      else if (isInput) ringRef.current.classList.add('is-text');
+      if (isBtn)        glowRef.current.classList.add('is-hover');
+      else if (isInput) glowRef.current.classList.add('is-text');
     };
 
     const onDown = () => {
-      ringRef.current?.classList.remove('is-hover');
-      ringRef.current?.classList.add('is-click');
+      glowRef.current?.classList.remove('is-hover');
+      glowRef.current?.classList.add('is-click');
     };
 
     const onUp = (e: MouseEvent) => {
-      ringRef.current?.classList.remove('is-click');
+      glowRef.current?.classList.remove('is-click');
       const t = e.target as HTMLElement;
       if (t.closest('button') || t.closest('a')) {
-        ringRef.current?.classList.add('is-hover');
+        glowRef.current?.classList.add('is-hover');
       }
     };
 
     const onLeave = () => {
       if (dotRef.current)  dotRef.current.style.opacity  = '0';
-      if (ringRef.current) ringRef.current.style.opacity = '0';
+      if (glowRef.current) glowRef.current.style.opacity = '0';
     };
 
     const onEnter = () => {
       if (dotRef.current)  dotRef.current.style.opacity  = '1';
-      if (ringRef.current) ringRef.current.style.opacity = '1';
+      if (glowRef.current) glowRef.current.style.opacity = '1';
     };
 
     window.addEventListener('mousemove',    onMove,  { passive: true });
@@ -95,7 +91,7 @@ export const CustomCursor: React.FC = () => {
   return (
     <>
       <div ref={dotRef}  className="rx-cursor-dot"  aria-hidden="true" />
-      <div ref={ringRef} className="rx-cursor-ring" aria-hidden="true" />
+      <div ref={glowRef} className="rx-cursor-glow" aria-hidden="true" />
     </>
   );
 };

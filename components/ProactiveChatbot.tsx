@@ -34,7 +34,7 @@ export const ProactiveChatbot: React.FC<ProactiveChatbotProps> = ({ userMood, is
       // Create a new instance right before the call as per guidelines
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-2.0-flash',
         contents: `Context: User is using a wellness app called Relaxify. Mood: ${userMood}. User said: "${text}". Provide a short, friendly, empathetic wellness tip or answer. Under 30 words.`,
         config: { temperature: 0.7 }
       });

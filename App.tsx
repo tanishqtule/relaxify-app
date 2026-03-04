@@ -16,16 +16,24 @@ import { ErgoScan }             from './components/ErgoScan';
 import { CustomCursor }         from './components/CustomCursor';
 import { ParticleBackground }   from './components/ParticleBackground';
 import { ThemeProvider, useTheme } from './components/ThemeProvider';
+import { ErrorBoundary }        from './components/ErrorBoundary';
 import { ExerciseType, ExerciseSession, UserMonitoring, AppTab } from './types';
+
+/* ─── Safe JSON parse ─────────────────────────────────────────── */
+function safeJSON<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback;
+  try { return JSON.parse(raw) as T; }
+  catch { return fallback; }
+}
 
 /* ─── Simple Analytics Engine ────────────────────────────────── */
 const analytics = {
   track: (event: string, props: Record<string, unknown> = {}) => {
     const entry = { event, props, ts: Date.now() };
     try {
-      const log = JSON.parse(sessionStorage.getItem('rx_analytics') || '[]');
-      log.push(entry);
-      sessionStorage.setItem('rx_analytics', JSON.stringify(log.slice(-200)));
+      const log = safeJSON<object[]>(sessionStorage.getItem('rx_analytics'), []);
+      (log as object[]).push(entry);
+      sessionStorage.setItem('rx_analytics', JSON.stringify((log as object[]).slice(-200)));
     } catch { /* silent */ }
   },
 };
@@ -100,11 +108,11 @@ const AppInner: React.FC = () => {
 
   /* ── Persist & restore ──────────────────────────────── */
   useEffect(() => {
-    const savedHistory = localStorage.getItem('relaxify_history');
-    const savedUser    = localStorage.getItem('relaxify_user');
-    if (savedHistory) setHistory(JSON.parse(savedHistory));
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
+    const savedHistory = safeJSON<ExerciseSession[]>(localStorage.getItem('relaxify_history'), []);
+    const savedUser    = safeJSON<{ name: string; email: string } | null>(localStorage.getItem('relaxify_user'), null);
+    if (savedHistory.length) setHistory(savedHistory);
+    if (savedUser?.name) {
+      setUser(savedUser);
       setIsLoggedIn(true);
     }
 
@@ -153,7 +161,7 @@ const AppInner: React.FC = () => {
   const saveSession = (session: Omit<ExerciseSession, 'id' | 'timestamp'>) => {
     const newSession: ExerciseSession = {
       ...session,
-      id:        Math.random().toString(36).substr(2, 9),
+      id:        crypto.randomUUID(),
       timestamp: new Date().toISOString(),
     };
     const updated = [newSession, ...history];
@@ -162,6 +170,12 @@ const AppInner: React.FC = () => {
     setSelectedExercise(null);
     setActiveTab('dashboard');
     analytics.track('session_complete', { exercise: session.exercise, reward: session.reward });
+  };
+
+  const handleClearHistory = () => {
+    setHistory([]);
+    localStorage.removeItem('relaxify_history');
+    analytics.track('history_cleared');
   };
 
   const handleStartExercise = (type: ExerciseType) => {
@@ -211,7 +225,6 @@ const AppInner: React.FC = () => {
   }
 
   const mood     = MOOD_CONFIG[monitoring.mood] ?? MOOD_CONFIG.neutral;
-  const isDark   = resolvedTheme === 'dark';
 
   const themeIcon = theme === 'light'
     ? '☀️' : theme === 'dark' ? '🌙' : '⚙️';
@@ -370,6 +383,7 @@ const AppInner: React.FC = () => {
               onStartExercise={handleStartExercise}
               userName={user.name}
               monitoring={monitoring}
+              history={history}
             />
           )}
           {activeTab === 'exercise' && selectedExercise === ExerciseType.NECK_TILT && (
@@ -401,7 +415,12 @@ const AppInner: React.FC = () => {
           )}
           {activeTab === 'meditation' && <MeditationView />}
           {activeTab === 'ergo_scan'  && <ErgoScan />}
-          {activeTab === 'history'    && <HistoryView sessions={history} />}
+          {activeTab === 'history'    && (
+            <HistoryView
+              sessions={history}
+              onClear={handleClearHistory}
+            />
+          )}
         </div>
 
         {/* ── Profile modal ─────────────────────────────── */}
@@ -426,9 +445,11 @@ const AppInner: React.FC = () => {
 
 /* ─── Root App with providers ─────────────────────────────────── */
 const App: React.FC = () => (
-  <ThemeProvider>
-    <AppInner />
-  </ThemeProvider>
+  <ErrorBoundary>
+    <ThemeProvider>
+      <AppInner />
+    </ThemeProvider>
+  </ErrorBoundary>
 );
 
 export default App;
