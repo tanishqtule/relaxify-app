@@ -1,23 +1,28 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Sidebar }              from './components/Sidebar';
-import { Dashboard }            from './components/Dashboard';
-import { NeckTiltExercise }     from './components/NeckTiltExercise';
+import { Sidebar } from './components/Sidebar';
+import { Dashboard } from './components/Dashboard';
+import { NeckTiltExercise } from './components/NeckTiltExercise';
 import { HeadMovementExercise } from './components/HeadMovementExercise';
-import { ShoulderShrugExercise }from './components/ShoulderShrugExercise';
-import { EyeFocusExercise }     from './components/EyeFocusExercise';
-import { HistoryView }          from './components/HistoryView';
-import { LoginPage }            from './components/LoginPage';
-import { MeditationView }       from './components/MeditationView';
-import { ProactiveChatbot }     from './components/ProactiveChatbot';
-import { MoodTracker }          from './components/MoodTracker';
-import { ProfileModal }         from './components/ProfileModal';
-import { ErgoScan }             from './components/ErgoScan';
-import { CustomCursor }         from './components/CustomCursor';
-import { ParticleBackground }   from './components/ParticleBackground';
+import { ShoulderShrugExercise } from './components/ShoulderShrugExercise';
+import { EyeFocusExercise } from './components/EyeFocusExercise';
+import { HistoryView } from './components/HistoryView';
+import { LoginPage } from './components/LoginPage';
+import { MeditationView } from './components/MeditationView';
+import { ProactiveChatbot } from './components/ProactiveChatbot';
+import { MoodTracker } from './components/MoodTracker';
+import { ProfileModal } from './components/ProfileModal';
+import { ErgoScan } from './components/ErgoScan';
+import { CustomCursor } from './components/CustomCursor';
+import { ParticleBackground } from './components/ParticleBackground';
 import { ThemeProvider, useTheme } from './components/ThemeProvider';
-import { ErrorBoundary }        from './components/ErrorBoundary';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { ExerciseType, ExerciseSession, UserMonitoring, AppTab } from './types';
+
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, setDoc, increment } from 'firebase/firestore';
+import { auth, db } from './src/lib/firebase';
+import { encryptData, decryptData } from './src/lib/encryption';
 
 /* ─── Safe JSON parse ─────────────────────────────────────────── */
 function safeJSON<T>(raw: string | null, fallback: T): T {
@@ -40,32 +45,32 @@ const analytics = {
 
 /* ─── Mood config ─────────────────────────────────────────────── */
 const MOOD_CONFIG: Record<string, { label: string; color: string }> = {
-  happy:    { label: '😊 Content',  color: '#38F9D7' },
-  stressed: { label: '😟 Focused',  color: '#F59E0B' },
-  neutral:  { label: '😐 Ready',    color: '#60A5FA' },
-  tired:    { label: '😴 Resting',  color: '#A78BFA' },
+  happy: { label: '😊 Content', color: '#38F9D7' },
+  stressed: { label: '😟 Focused', color: '#F59E0B' },
+  neutral: { label: '😐 Ready', color: '#60A5FA' },
+  tired: { label: '😴 Resting', color: '#A78BFA' },
 };
 
 /* ─── Tab labels ──────────────────────────────────────────────── */
 const TAB_LABELS: Record<AppTab, string> = {
   dashboard: 'Dashboard',
-  exercise:  'Movement',
-  meditation:'Stillness',
+  exercise: 'Movement',
+  meditation: 'Stillness',
   ergo_scan: 'Ergo AI',
-  history:   'Analytics',
+  history: 'Analytics',
 };
 
 /* ─── Inner app (has access to theme context) ─────────────────── */
 const AppInner: React.FC = () => {
   const { resolvedTheme, setTheme, theme } = useTheme();
 
-  const [isLoggedIn,       setIsLoggedIn]       = useState(false);
-  const [user,             setUser]             = useState<{ name: string; email: string }>({ name: '', email: '' });
-  const [activeTab,        setActiveTab]        = useState<AppTab>('dashboard');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState<{ name: string; email: string }>({ name: '', email: '' });
+  const [activeTab, setActiveTab] = useState<AppTab>('dashboard');
   const [selectedExercise, setSelectedExercise] = useState<ExerciseType | null>(null);
-  const [showProfile,      setShowProfile]      = useState(false);
-  const [history,          setHistory]          = useState<ExerciseSession[]>([]);
-  const [monitoring,       setMonitoring]       = useState<UserMonitoring>({
+  const [showProfile, setShowProfile] = useState(false);
+  const [history, setHistory] = useState<ExerciseSession[]>([]);
+  const [monitoring, setMonitoring] = useState<UserMonitoring>({
     mood: 'neutral',
     blinkRate: 15,
     isStrained: false,
@@ -75,9 +80,9 @@ const AppInner: React.FC = () => {
   });
 
   // Scroll depth tracking
-  const scrollRef      = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const lastActivityRef = useRef(Date.now());
-  const headerRef       = useRef<HTMLElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
 
   /* ── Scroll depth analytics ─────────────────────────── */
   const trackScrollDepth = useCallback(() => {
@@ -106,22 +111,38 @@ const AppInner: React.FC = () => {
     return () => clearInterval(id);
   }, [isLoggedIn]);
 
-  /* ── Persist & restore ──────────────────────────────── */
+  /* ── Firebase Auth & Sync ────────────────────────────── */
   useEffect(() => {
-    const savedHistory = safeJSON<ExerciseSession[]>(localStorage.getItem('relaxify_history'), []);
-    const savedUser    = safeJSON<{ name: string; email: string } | null>(localStorage.getItem('relaxify_user'), null);
-    if (savedHistory.length) setHistory(savedHistory);
-    if (savedUser?.name) {
-      setUser(savedUser);
-      setIsLoggedIn(true);
-    }
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        setUser({ name: firebaseUser.displayName || 'Relaxed User', email: firebaseUser.email || '' });
+        setIsLoggedIn(true);
+
+        try {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            if (data.history) {
+              setHistory(decryptData<ExerciseSession[]>(data.history, firebaseUser.uid, []));
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching user data:", error);
+        }
+      } else {
+        setIsLoggedIn(false);
+        setUser({ name: '', email: '' });
+        setHistory([]);
+      }
+    });
 
     const handleActivity = () => { lastActivityRef.current = Date.now(); };
     window.addEventListener('mousemove', handleActivity, { passive: true });
-    window.addEventListener('keydown',   handleActivity, { passive: true });
+    window.addEventListener('keydown', handleActivity, { passive: true });
     return () => {
+      unsubscribe();
       window.removeEventListener('mousemove', handleActivity);
-      window.removeEventListener('keydown',   handleActivity);
+      window.removeEventListener('keydown', handleActivity);
     };
   }, []);
 
@@ -142,40 +163,62 @@ const AppInner: React.FC = () => {
   }, [isLoggedIn]);
 
   /* ── Handlers ───────────────────────────────────────── */
-  const handleLogin = (name: string, email: string) => {
-    const userData = { name, email };
-    setUser(userData);
-    localStorage.setItem('relaxify_user', JSON.stringify(userData));
-    setIsLoggedIn(true);
-    analytics.track('login', { name });
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('relaxify_user');
+  const handleLogout = async () => {
+    await auth.signOut();
     setIsLoggedIn(false);
     setShowProfile(false);
     setUser({ name: '', email: '' });
+    setHistory([]);
     analytics.track('logout');
   };
 
-  const saveSession = (session: Omit<ExerciseSession, 'id' | 'timestamp'>) => {
+  const saveSession = async (session: Omit<ExerciseSession, 'id' | 'timestamp'>) => {
     const newSession: ExerciseSession = {
       ...session,
-      id:        crypto.randomUUID(),
+      id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
     };
     const updated = [newSession, ...history];
     setHistory(updated);
-    localStorage.setItem('relaxify_history', JSON.stringify(updated));
     setSelectedExercise(null);
     setActiveTab('dashboard');
     analytics.track('session_complete', { exercise: session.exercise, reward: session.reward });
+
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      try {
+        const encryptedHistory = encryptData(updated, currentUser.uid);
+        const encryptedMonitoring = encryptData(monitoring, currentUser.uid);
+        await setDoc(doc(db, 'users', currentUser.uid), {
+          history: encryptedHistory,
+          monitoring: encryptedMonitoring,
+          lastUpdated: new Date().toISOString()
+        }, { merge: true });
+
+        // Increment Global Community stat
+        await setDoc(doc(db, 'community', 'stats'), {
+          totalSessionsCompleted: increment(1)
+        }, { merge: true });
+      } catch (error) {
+        console.error("Failed to sync session to cloud:", error);
+      }
+    }
   };
 
-  const handleClearHistory = () => {
+  const handleClearHistory = async () => {
     setHistory([]);
-    localStorage.removeItem('relaxify_history');
     analytics.track('history_cleared');
+
+    const currentUser = auth.currentUser;
+    if (currentUser) {
+      try {
+        await setDoc(doc(db, 'users', currentUser.uid), {
+          history: encryptData([], currentUser.uid)
+        }, { merge: true });
+      } catch (e) {
+        console.error("Failed to clear cloud history", e);
+      }
+    }
   };
 
   const handleStartExercise = (type: ExerciseType) => {
@@ -206,7 +249,7 @@ const AppInner: React.FC = () => {
 
   /* ── Theme toggle cycle: light → dark → system ──────── */
   const cycleTheme = () => {
-    const next: Record<string, 'light'|'dark'|'system'> = {
+    const next: Record<string, 'light' | 'dark' | 'system'> = {
       light: 'dark', dark: 'system', system: 'light',
     };
     setTheme(next[theme] ?? 'light');
@@ -219,12 +262,12 @@ const AppInner: React.FC = () => {
       <>
         <CustomCursor />
         <ParticleBackground />
-        <LoginPage onLogin={handleLogin} />
+        <LoginPage />
       </>
     );
   }
 
-  const mood     = MOOD_CONFIG[monitoring.mood] ?? MOOD_CONFIG.neutral;
+  const mood = MOOD_CONFIG[monitoring.mood] ?? MOOD_CONFIG.neutral;
 
   const themeIcon = theme === 'light'
     ? '☀️' : theme === 'dark' ? '🌙' : '⚙️';
@@ -414,8 +457,8 @@ const AppInner: React.FC = () => {
             />
           )}
           {activeTab === 'meditation' && <MeditationView />}
-          {activeTab === 'ergo_scan'  && <ErgoScan />}
-          {activeTab === 'history'    && (
+          {activeTab === 'ergo_scan' && <ErgoScan />}
+          {activeTab === 'history' && (
             <HistoryView
               sessions={history}
               onClear={handleClearHistory}

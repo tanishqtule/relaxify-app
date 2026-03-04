@@ -1,5 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../src/lib/firebase';
 import { ExerciseType, ExerciseSession, UserMonitoring } from '../types';
 import { TiltCard } from './TiltCard';
 
@@ -20,16 +22,16 @@ const QUOTES = [
 ];
 
 const EXERCISE_IMAGES = {
-  [ExerciseType.NECK_TILT]:     "https://images.unsplash.com/photo-1616699002805-0741e1e4a9c5?auto=format&fit=crop&q=80&w=600",
+  [ExerciseType.NECK_TILT]: "https://images.unsplash.com/photo-1616699002805-0741e1e4a9c5?auto=format&fit=crop&q=80&w=600",
   [ExerciseType.HEAD_MOVEMENT]: "https://images.unsplash.com/photo-1552196563-55cd4e45efb3?auto=format&fit=crop&q=80&w=600",
-  [ExerciseType.SHOULDER_SHRUG]:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&q=80&w=600",
-  [ExerciseType.MEDITATION]:    "https://images.unsplash.com/photo-1545389336-cf090694435e?auto=format&fit=crop&q=80&w=600",
-  [ExerciseType.EYE_FOCUS]:     "https://images.unsplash.com/photo-1494869042583-f6c911f04b4c?auto=format&fit=crop&q=80&w=600",
+  [ExerciseType.SHOULDER_SHRUG]: "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&q=80&w=600",
+  [ExerciseType.MEDITATION]: "https://images.unsplash.com/photo-1545389336-cf090694435e?auto=format&fit=crop&q=80&w=600",
+  [ExerciseType.EYE_FOCUS]: "https://images.unsplash.com/photo-1494869042583-f6c911f04b4c?auto=format&fit=crop&q=80&w=600",
 };
 
 /* ── Compute real stats from history ───────────────────────────── */
 function computeStats(history: ExerciseSession[]) {
-  const totalXP     = history.reduce((s, h) => s + h.reward, 0);
+  const totalXP = history.reduce((s, h) => s + h.reward, 0);
   const sessionCount = history.length;
 
   if (!history.length) {
@@ -65,27 +67,27 @@ function computeStats(history: ExerciseSession[]) {
 }
 
 /* ── Build 28-day activity heatmap from real history ───────────── */
-function buildHeatmap(history: ExerciseSession[]): (0|1|2|3|4)[] {
+function buildHeatmap(history: ExerciseSession[]): (0 | 1 | 2 | 3 | 4)[] {
   return Array.from({ length: 28 }, (_, i) => {
     const dayOffset = 27 - i;
     const d = new Date();
     d.setDate(d.getDate() - dayOffset);
     d.setHours(0, 0, 0, 0);
     const dayStart = d.getTime();
-    const dayEnd   = dayStart + 86_400_000;
-    const count    = history.filter(s => {
+    const dayEnd = dayStart + 86_400_000;
+    const count = history.filter(s => {
       const t = new Date(s.timestamp).getTime();
       return t >= dayStart && t < dayEnd;
     }).length;
-    return (count === 0 ? 0 : count === 1 ? 1 : count <= 3 ? 2 : count <= 5 ? 3 : 4) as 0|1|2|3|4;
+    return (count === 0 ? 0 : count === 1 ? 1 : count <= 3 ? 2 : count <= 5 ? 3 : 4) as 0 | 1 | 2 | 3 | 4;
   });
 }
 
 /* ── Animated eye health ring ───────────────────────────────────── */
 const BlinkRing: React.FC<{ rate: number; isStrained: boolean }> = ({ rate, isStrained }) => {
   const ringRef = useRef<SVGCircleElement>(null);
-  const ideal   = 18; // ideal blinks per minute
-  const pct     = Math.min(rate / ideal, 1);
+  const ideal = 18; // ideal blinks per minute
+  const pct = Math.min(rate / ideal, 1);
   const dashOff = 283 * (1 - pct);
 
   useEffect(() => {
@@ -162,7 +164,7 @@ const StatPill: React.FC<{
 );
 
 /* ── Animated activity cell ─────────────────────────────────────── */
-const ActivityCell: React.FC<{ level: 0|1|2|3|4; delay: number }> = ({ level, delay }) => {
+const ActivityCell: React.FC<{ level: 0 | 1 | 2 | 3 | 4; delay: number }> = ({ level, delay }) => {
   const classes = [
     'activity-cell activity-cell-0',
     'activity-cell activity-cell-1',
@@ -177,7 +179,7 @@ const ActivityCell: React.FC<{ level: 0|1|2|3|4; delay: number }> = ({ level, de
       style={{
         animation: `entrance 0.4s ease ${delay}ms both`,
       }}
-      title={`Activity level: ${['None','Low','Moderate','High','Peak'][level]}`}
+      title={`Activity level: ${['None', 'Low', 'Moderate', 'High', 'Peak'][level]}`}
     />
   );
 };
@@ -288,9 +290,10 @@ const ExerciseCard: React.FC<ExerciseCardProps> = ({
 export const Dashboard: React.FC<DashboardProps> = ({
   onStartExercise, userName, monitoring, history = [],
 }) => {
-  const [quote,    setQuote]    = useState('');
+  const [quote, setQuote] = useState('');
   const [greeting, setGreeting] = useState('');
-  const [mounted,  setMounted]  = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [globalImpact, setGlobalImpact] = useState<number>(0);
   const progressRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -300,7 +303,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     // Stagger entrance
     const tid = setTimeout(() => setMounted(true), 50);
-    return () => clearTimeout(tid);
+
+    // Listen to global community stats
+    const unsub = onSnapshot(doc(db, 'community', 'stats'), (docSnap) => {
+      if (docSnap.exists()) {
+        setGlobalImpact(docSnap.data().totalSessionsCompleted || 0);
+      }
+    });
+
+    return () => {
+      clearTimeout(tid);
+      unsub();
+    };
   }, []);
 
   const { totalXP, sessionCount, streakDays, wellnessScore, todayProgress } = computeStats(history);
@@ -446,16 +460,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <StatPill
           icon="💎"
           value={String(sessionCount)}
-          label="Sessions"
+          label="Your Sessions"
           color="#A78BFA"
           delay={160}
+        />
+        <StatPill
+          icon="🌍"
+          value={globalImpact.toLocaleString()}
+          label="Global Impact"
+          color="#66D9C4"
+          delay={240}
         />
         <StatPill
           icon="🎯"
           value={`${wellnessScore}%`}
           label="Wellness"
           color="#60A5FA"
-          delay={240}
+          delay={320}
         />
       </div>
 
@@ -551,7 +572,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                 {/* Progress ticks */}
                 <div className="flex justify-between mt-2">
-                  {[0,25,50,75,100].map(v => (
+                  {[0, 25, 50, 75, 100].map(v => (
                     <span
                       key={v}
                       className="text-[8px] font-bold"
@@ -640,7 +661,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {/* Legend */}
             <div className="flex items-center gap-2 mt-4 justify-end">
               <span className="text-[9px] font-bold" style={{ color: 'var(--text-muted)' }}>Less</span>
-              {([0,1,2,3,4] as (0|1|2|3|4)[]).map(l => (
+              {([0, 1, 2, 3, 4] as (0 | 1 | 2 | 3 | 4)[]).map(l => (
                 <div key={l} className={`w-3 h-3 rounded-sm activity-cell-${l}`} />
               ))}
               <span className="text-[9px] font-bold" style={{ color: 'var(--text-muted)' }}>More</span>

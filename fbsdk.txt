@@ -1,0 +1,11 @@
+{
+  "projectId": "relaxify-e57bc",
+  "appId": "1:8978757921:web:93bf228f770958d6c22660",
+  "storageBucket": "relaxify-e57bc.firebasestorage.app",
+  "apiKey": "AIzaSyDCakFToRcWCvCGZSk1I359vkvJ_JaS4Zs",
+  "authDomain": "relaxify-e57bc.firebaseapp.com",
+  "messagingSenderId": "8978757921",
+  "measurementId": "G-H6X4D5EH07",
+  "projectNumber": "8978757921",
+  "version": "2"
+}

@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 
 export enum ExerciseType {
   NECK_TILT = 'neck_tilt',
