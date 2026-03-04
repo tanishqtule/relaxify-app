@@ -437,6 +437,7 @@ const AppInner: React.FC = () => {
           userMood={monitoring.mood}
           isIdle={Date.now() - lastActivityRef.current > 180_000}
           onStartExercise={handleStartExercise}
+          userName={user.name}
         />
       </main>
     </div>

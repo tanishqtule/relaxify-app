@@ -20,11 +20,11 @@ const QUOTES = [
 ];
 
 const EXERCISE_IMAGES = {
-  [ExerciseType.NECK_TILT]:     "https://images.unsplash.com/photo-1599447421416-3414500d18a5?auto=format&fit=crop&q=80&w=600",
-  [ExerciseType.HEAD_MOVEMENT]: "https://images.unsplash.com/photo-1506126613408-eca07ce68773?auto=format&fit=crop&q=80&w=600",
-  [ExerciseType.SHOULDER_SHRUG]:"https://images.unsplash.com/photo-1574680096145-d05b474e2155?auto=format&fit=crop&q=80&w=600",
-  [ExerciseType.MEDITATION]:    "https://images.unsplash.com/photo-1508672019048-805c876b67e2?auto=format&fit=crop&q=80&w=600",
-  [ExerciseType.EYE_FOCUS]:     "https://images.unsplash.com/photo-1516733725897-1aa73b87c8e8?auto=format&fit=crop&q=80&w=600",
+  [ExerciseType.NECK_TILT]:     "https://images.unsplash.com/photo-1616699002805-0741e1e4a9c5?auto=format&fit=crop&q=80&w=600",
+  [ExerciseType.HEAD_MOVEMENT]: "https://images.unsplash.com/photo-1552196563-55cd4e45efb3?auto=format&fit=crop&q=80&w=600",
+  [ExerciseType.SHOULDER_SHRUG]:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&q=80&w=600",
+  [ExerciseType.MEDITATION]:    "https://images.unsplash.com/photo-1545389336-cf090694435e?auto=format&fit=crop&q=80&w=600",
+  [ExerciseType.EYE_FOCUS]:     "https://images.unsplash.com/photo-1494869042583-f6c911f04b4c?auto=format&fit=crop&q=80&w=600",
 };
 
 /* ── Compute real stats from history ───────────────────────────── */

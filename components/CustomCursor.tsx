@@ -18,7 +18,7 @@ export const CustomCursor: React.FC = () => {
       const { x, y } = posRef.current;
 
       if (dotRef.current) {
-        dotRef.current.style.transform = `translate(${x - 3}px, ${y - 3}px)`;
+        dotRef.current.style.transform = `translate(${x - 4}px, ${y - 4}px)`;
       }
       if (glowRef.current) {
         // offsetWidth tracks CSS transitions (glow expands on hover)
