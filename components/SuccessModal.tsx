@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 
 interface SuccessModalProps {
   message: string;
@@ -17,11 +17,9 @@ export const SuccessModal: React.FC<SuccessModalProps> = ({ message, onSave, onN
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-image',
-          contents: {
-            parts: [{ text: "A premium, minimalist abstract wallpaper for a wellness app. Colors: mint, teal, soft blue. Subject: a peaceful lotus flower made of digital glass. High resolution, 4k, artistic." }]
-          },
-          config: { imageConfig: { aspectRatio: "1:1" } }
+          model: 'gemini-2.0-flash-preview-image-generation',
+          contents: "A premium, minimalist abstract wallpaper for a wellness app. Colors: mint, teal, soft blue. Subject: a peaceful lotus flower made of digital glass. High resolution, 4k, artistic.",
+          config: { responseModalities: [Modality.IMAGE] }
         });
 
         for (const part of response.candidates[0].content.parts) {
