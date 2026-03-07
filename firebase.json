@@ -1,5 +1,6 @@
 {
     "hosting": {
+        "site": "relaxify-e57bc",
         "public": "dist",
         "ignore": [
             "firebase.json",
